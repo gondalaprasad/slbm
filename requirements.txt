@@ -6,8 +6,6 @@ aiohttp
 
 # Data Handling
 pandas
-openpyxl
-xlsxwriter
 
 # Dashboard (Flask + HTML/JS)
 flask

@@ -4,13 +4,7 @@ import pandas as pd
 from playwright.async_api import async_playwright
 from datetime import datetime, timedelta
 import aiohttp
-import xlsxwriter
-import os
-from pathlib import Path
-import xml.etree.ElementTree as ET
-from dateutil.relativedelta import relativedelta
 
-config_folder = 'D:\\Codes\\SLBM\\Data'
 
 slb_webhook = 'https://chat.googleapis.com/v1/spaces/AAQAkiGnWA0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=o2QDBFdBXA7N0px0zxsP3llEzgufYV50J1kfuL_HLF0'
 #config_folder = 'nse_slb_data'
@@ -347,46 +341,22 @@ async def open_nse_website():
         # print(df.head(10).to_string(index=False))
         # print("=" * 180)
         
-        # Generate timestamp for filename
+        
+        
+        # Generate timestamp
         now = datetime.now()
         readable_time = now.strftime("%Y-%m-%d %H:%M:%S")
-
-        # Create hierarchical folder structure: Year/Month/Day
-        year = now.strftime("%Y")      # e.g., 2026
-        month = now.strftime("%m")     # e.g., 02
-        day = now.strftime("%d")       # e.g., 19
-
-        full_path = Path(config_folder) / year / month / day
-        full_path.mkdir(parents=True, exist_ok=True)  # Create folders if they don't exist
-
-        print(f"Data folder structure: {full_path}")
-
-        # Create Excel file with two sheets in the hierarchical folder
-        # Time-based filename (only time, since date is in folder path)
-        time_filename = now.strftime("%H%M%S")
-        excel_filename = f"slb_data_{time_filename}.xlsx"
-        excel_filepath = full_path / excel_filename
-        with pd.ExcelWriter(excel_filepath, engine='xlsxwriter') as writer:
-            # Write all data to 'all_data' sheet
-            df.to_excel(writer, sheet_name='all_data', index=False)
-            
-            # Filter data excluding rows where 'Best Bid Qty' is '-'
-            filtered_df = df[df['Best Bid Qty'] != '-'].copy()
-            filtered_df.to_excel(writer, sheet_name='filtered_data', index=False)
-        
-        print(f"\nData exported to: {excel_filepath}")
         
         # Push to Supabase
         await push_to_supabase(df, now)
         
         # Send success message to Google Chat
         try:
-           # await send_slb_webhook_message(f"✅ SLB data exported successfully with timestamp of {readable_time}")
-           await send_slb_webhook_message(f"✅ SLB data exported successfully, filename : {excel_filename}")
+           await send_slb_webhook_message(f"✅ SLB data scraped and pushed to Supabase successfully at {readable_time}")
         except Exception as e:
             print(f"Failed to send webhook message: {e}")
         
-        # Wait for 10 seconds to observe
+        # Wait for 5 seconds to observe
         print("\nWaiting for 5 seconds before closing...")
         await asyncio.sleep(5)
         
@@ -414,33 +384,50 @@ async def push_to_supabase(df, timestamp):
             print("Skipping Supabase push: 'Best Bid Price' column missing")
             return
 
+        # Helper functions
+        def safe_float(val):
+            try:
+                # Remove commas if present
+                if isinstance(val, str):
+                    val = val.replace(',', '')
+                num = pd.to_numeric(val, errors='coerce')
+                return None if pd.isna(num) else float(num)
+            except:
+                return None
+
+        def safe_int(val):
+            try:
+                # Remove commas if present
+                if isinstance(val, str):
+                    val = val.replace(',', '')
+                num = pd.to_numeric(val, errors='coerce')
+                return None if pd.isna(num) else int(num)
+            except:
+                return None
+
         # Clean and Filter
-        df['Best Bid Price'] = pd.to_numeric(df['Best Bid Price'], errors='coerce')
+        # 1. Convert numeric columns to ensure correct filtering
+        df['Best Bid Price_Clean'] = df['Best Bid Price'].apply(safe_float)
+        df['Best Bid Qty_Clean'] = df['Best Bid Qty'].apply(safe_int)
+
+        # 2. Filter: 
+        # - Best Bid Price must be valid and > 0
+        # - Best Bid Qty must be valid (not '-') and > 0
         valid_rows = df[
-            (df['Best Bid Price'].notnull()) & 
-            (df['Best Bid Price'] != 0)
+            (df['Best Bid Price_Clean'].notnull()) & 
+            (df['Best Bid Price_Clean'] > 0) &
+            (df['Best Bid Qty_Clean'].notnull()) &
+            (df['Best Bid Qty_Clean'] > 0)
         ].copy()
 
         if valid_rows.empty:
-            print("No valid rows to push to Supabase")
+            print("No valid rows to push to Supabase (after filtering 0 prices/qtys)")
             return
+
+        print(f"Pushing {len(valid_rows)} valid rows to Supabase...")
 
         records = []
         for _, row in valid_rows.iterrows():
-            def safe_float(val):
-                try:
-                    num = pd.to_numeric(val, errors='coerce')
-                    return None if pd.isna(num) else float(num)
-                except:
-                    return None
-
-            def safe_int(val):
-                try:
-                    num = pd.to_numeric(val, errors='coerce')
-                    return None if pd.isna(num) else int(num)
-                except:
-                    return None
-
             record = {
                 "symbol": str(row.get('Symbol', '')),
                 "series": str(row.get('Series', '')),
