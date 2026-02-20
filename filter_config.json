@@ -1,0 +1,9 @@
+{
+  "symbol": "RVNL",
+  "series": "Mar-2026",
+  "refreshMode": "file",
+  "refreshInterval": 30,
+  "showBid": true,
+  "showAsk": true,
+  "showDataTable": false
+}

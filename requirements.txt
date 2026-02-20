@@ -1,0 +1,23 @@
+# SLB Tracking Mechanism - Requirements
+
+# Web Scraping
+playwright==1.48.0
+aiohttp
+
+# Data Handling
+pandas
+openpyxl
+xlsxwriter
+
+# Dashboard (Flask + HTML/JS)
+flask
+flask-cors
+
+# Market Data
+yfinance
+
+# Date Utilities
+python-dateutil
+
+# Install Playwright browsers after installation:
+# playwright install chromium
